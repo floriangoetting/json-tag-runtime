@@ -51,9 +51,10 @@ await jsonTag.flush();
 
 The browser adapter creates a missing `event.id`, `event.occurred_at`, and the
 `frontend` origin. It adds page, referrer, locale, timezone, viewport, and
-screen context when available. Values such as identity, environment,
-User-Agent, Client Hints, and trusted request metadata must be set or confirmed
-by the receiving first-party server.
+screen context when available. Automatically collected page and referrer URLs
+exclude query parameters and URL fragments. Values such as identity,
+environment, User-Agent, Client Hints, and trusted request metadata must be set
+or confirmed by the receiving first-party server.
 
 The classic-script build exposes the same browser exports as
 `globalThis.JsonTagRuntime`:

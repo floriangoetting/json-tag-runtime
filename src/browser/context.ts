@@ -10,17 +10,34 @@ function mergeObject(
 
   return { ...defaults, ...value } as Record<string, JsonValue>;
 }
+
+function stripQueryAndHash(value: string, base?: string): string | undefined {
+  try {
+    const url = new URL(value, base);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return undefined;
+  }
+}
+
 export function withBrowserContext(input: ProducerEventInput): ProducerEventInput {
   const page: Record<string, JsonValue> = {};
   const context: Record<string, JsonValue> = {};
 
   if (typeof location !== 'undefined') {
-    page.url = location.href;
     page.path = location.pathname;
+    const pageUrl = stripQueryAndHash(location.href);
+    if (pageUrl) page.url = pageUrl;
   }
 
   if (typeof document !== 'undefined') {
-    if (document.referrer) page.referrer = document.referrer;
+    const referrer = document.referrer
+      ? stripQueryAndHash(
+        document.referrer,
+        typeof location === 'undefined' ? undefined : location.href,
+      )
+      : undefined;
+    if (referrer) page.referrer = referrer;
     if (document.title) page.title = document.title;
   }
 

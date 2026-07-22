@@ -21,6 +21,13 @@ JSON-Tag-Template-Repository übernommen:
 npm run sync:json-tag -- /path/to/json-tag
 ```
 
+Solange die Runtime noch nicht veröffentlicht ist, kann der ESM-Browser-Build
+für lokale Skin-to-Go-Integrationen reproduzierbar vendort werden:
+
+```bash
+npm run sync:skin-to-go -- /path/to/skin_to_go
+```
+
 Im Template-Repository sind diese beiden Dateien reine Build-Artefakte und
 dürfen nicht unabhängig weiterentwickelt werden. Beide Repositories behalten
 getrennte Git-Historien.

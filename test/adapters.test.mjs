@@ -67,3 +67,52 @@ test('node adapter passes events to an application transport without browser API
   assert.equal(payload.event.origin, 'backend');
   assert.equal(payload.trade.id, 'trade-1');
 });
+
+test('browser context excludes query parameters and hashes from URLs', async () => {
+  const originalLocation = Object.getOwnPropertyDescriptor(globalThis, 'location');
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  let payload;
+
+  Object.defineProperty(globalThis, 'location', {
+    configurable: true,
+    value: {
+      href: 'https://example.test/marketplace?token=secret#details',
+      pathname: '/marketplace',
+    },
+  });
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    value: {
+      referrer: 'https://referrer.test/campaign?user=secret#fragment',
+      title: 'Marketplace',
+    },
+  });
+
+  try {
+    const jsonTag = createBrowserJsonTag({
+      id_factory: () => 'browser-event-private-url',
+      now: () => new Date('2026-07-22T12:34:56.000Z'),
+      transport(value) {
+        payload = value;
+      },
+    });
+
+    await jsonTag.send({ event: { name: 'page_view' } });
+
+    assert.equal(payload.page.url, 'https://example.test/marketplace');
+    assert.equal(payload.page.path, '/marketplace');
+    assert.equal(payload.page.referrer, 'https://referrer.test/campaign');
+    assert.equal(JSON.stringify(payload).includes('secret'), false);
+  } finally {
+    if (originalLocation) {
+      Object.defineProperty(globalThis, 'location', originalLocation);
+    } else {
+      delete globalThis.location;
+    }
+    if (originalDocument) {
+      Object.defineProperty(globalThis, 'document', originalDocument);
+    } else {
+      delete globalThis.document;
+    }
+  }
+});
