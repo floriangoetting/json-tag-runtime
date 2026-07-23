@@ -86,6 +86,16 @@ npm run sync:json-tag -- /path/to/json-tag
 
 Do not edit the generated compatibility files in the GTM repository directly.
 
+Until the package is published, the Browser and Node.js ESM builds can be
+exported reproducibly to arbitrary consumer paths:
+
+```bash
+npm run export:esm -- /path/to/browser.js /path/to/node.js
+```
+
+The target files are generated artifacts and must not be maintained as
+independent runtime implementations in consuming repositories.
+
 ## Node.js
 
 ```js
