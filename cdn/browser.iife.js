@@ -343,6 +343,16 @@ var JsonTagRuntime = (() => {
     const enabled = options.enabled === true;
     let consent = options.consent === true;
     const key = options.storage_key ?? "json_tag_identity_v1";
+    const storage = options.storage ?? "cookie";
+    const cookieName = encodeURIComponent(key);
+    const domain = options.cookie?.domain?.replace(/^\./, "").toLowerCase();
+    const maxAge = options.cookie?.max_age_seconds ?? 31536e3;
+    if (!["cookie", "localStorage"].includes(storage)) throw new Error("Invalid identity.storage");
+    if (!Number.isInteger(maxAge) || maxAge < 1 || maxAge > 3456e4) throw new Error("identity.cookie.max_age_seconds must be between 1 and 34560000");
+    if (domain && (!/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(domain) || !globalThis.location || location.hostname !== domain && !location.hostname.endsWith(`.${domain}`))) throw new Error("identity.cookie.domain must match this host or a parent domain");
+    const cookieAttributes = `; Path=/; SameSite=Lax${domain ? `; Domain=${domain}` : ""}${globalThis.location?.protocol === "https:" ? "; Secure" : ""}`;
+    const readStored = () => storage === "localStorage" ? globalThis.localStorage.getItem(key) : globalThis.document.cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1);
+    const decodeStored = (raw) => storage === "cookie" ? decodeURIComponent(raw) : raw;
     const minutes = options.session?.inactivity_minutes ?? 30;
     if (!key.trim()) throw new Error("identity.storage_key must not be empty");
     if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440) {
@@ -353,9 +363,9 @@ var JsonTagRuntime = (() => {
     const read = () => {
       try {
         if (storageFailed) return memory;
-        const raw = globalThis.localStorage.getItem(key);
+        const raw = readStored();
         if (!raw) return {};
-        const data = object(JSON.parse(raw));
+        const data = object(JSON.parse(decodeStored(raw)));
         const state = {};
         if (uuid(data.device_id)) state.device_id = data.device_id;
         const session = object(data.session);
@@ -370,7 +380,12 @@ var JsonTagRuntime = (() => {
     const write = (state) => {
       memory = state;
       try {
-        globalThis.localStorage.setItem(key, JSON.stringify(state));
+        if (storage === "localStorage") globalThis.localStorage.setItem(key, JSON.stringify(state));
+        else {
+          const value = encodeURIComponent(JSON.stringify(state));
+          globalThis.document.cookie = `${cookieName}=${value}; Max-Age=${maxAge}${cookieAttributes}`;
+          if (readStored() !== value) storageFailed = true;
+        }
       } catch {
         storageFailed = true;
       }
@@ -379,7 +394,8 @@ var JsonTagRuntime = (() => {
       memory = {};
       if (!enabled) return;
       try {
-        globalThis.localStorage.removeItem(key);
+        if (storage === "localStorage") globalThis.localStorage.removeItem(key);
+        else globalThis.document.cookie = `${cookieName}=; Max-Age=0${cookieAttributes}`;
       } catch {
         storageFailed = true;
       }

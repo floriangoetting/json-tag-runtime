@@ -4,7 +4,7 @@ import { createJsonTag } from '../dist/browser/index.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const payload = () => ({ event: { name: 'click' }, device: { category: 'desktop' } });
-const tag = (options = {}) => createJsonTag({ browser_context: false, transport: async () => ({ accepted: true }), ...options });
+const tag = (options = {}) => createJsonTag({ browser_context: false, transport: async () => ({ accepted: true }), ...options, identity: options.identity ? { storage: 'localStorage', ...options.identity } : undefined });
 const event = async (runtime, input = payload()) => (await runtime.send(input)).event;
 function storage(t, blocked = false) {
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
@@ -134,4 +134,56 @@ test('concurrent instances share identity and flush waits for pending Web Lock w
   assert.equal(flushed[0].sent, 1);
   assert.equal(flushed[1].sent, 1);
   assert.equal(first.pending(), 0);
+});
+
+function cookies(t, blocked = false) {
+  const descriptors = ['document', 'location'].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]);
+  const jar = new Map();
+  const writes = [];
+  let reads = 0;
+  Object.defineProperty(globalThis, 'location', { configurable: true, value: { hostname: 'shop.example.com', protocol: 'https:' } });
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: {
+    get cookie() { reads++; return [...jar].map(([key, value]) => `${key}=${value}`).join('; '); },
+    set cookie(value) { writes.push(value); if (blocked) return; const [pair] = value.split(';'); const index = pair.indexOf('='); const key = pair.slice(0, index); if (value.includes('Max-Age=0;')) jar.delete(key); else jar.set(key, pair.slice(index + 1)); }
+  } });
+  t.after(() => { for (const [name, descriptor] of descriptors) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; } });
+  return { jar, writes, reads: () => reads };
+}
+
+test('cookie identity defaults to host scope and starts only after consent', async (t) => {
+  const store = cookies(t);
+  const runtime = createJsonTag({ browser_context: false, transport: async () => ({ accepted: true }), identity: { enabled: true } });
+  assert.equal((await event(runtime)).device.id, undefined);
+  assert.equal(store.reads(), 0);
+  assert.equal(store.writes.length, 0);
+  runtime.setIdentityConsent(true);
+  const first = await event(runtime);
+  assert.match(first.device.id, uuid);
+  assert.match(store.writes[0], /Max-Age=31536000; Path=\/; SameSite=Lax; Secure$/);
+  assert.doesNotMatch(store.writes[0], /Domain=/);
+  assert.equal(first.session, undefined);
+});
+
+test('configured cookie domain is shared by instances and reset deletes the same scope', async (t) => {
+  const store = cookies(t);
+  const options = { identity: { storage: 'cookie', enabled: true, consent: true, cookie: { domain: '.example.com', max_age_seconds: 86400 } } };
+  const first = await event(tag(options));
+  globalThis.location.hostname = 'www.example.com';
+  const second = tag(options);
+  assert.equal((await event(second)).device.id, first.device.id);
+  assert.match(store.writes[0], /Max-Age=86400; Path=\/; SameSite=Lax; Domain=example.com; Secure$/);
+  second.setIdentityConsent(false);
+  assert.match(store.writes.at(-1), /Max-Age=0; Path=\/; SameSite=Lax; Domain=example.com; Secure$/);
+  assert.equal(store.jar.size, 0);
+});
+
+test('blocked cookies use memory and invalid domains or lifetimes are rejected', async (t) => {
+  cookies(t, true);
+  const runtime = tag({ identity: { storage: 'cookie', enabled: true, consent: true } });
+  const first = await event(runtime);
+  assert.equal((await event(runtime)).device.id, first.device.id);
+  runtime.resetIdentity();
+  assert.notEqual((await event(runtime)).device.id, first.device.id);
+  for (const domain of ['other.com', 'example.com; Secure', 'badexample.com']) assert.throws(() => tag({ identity: { cookie: { domain } } }), /cookie.domain/);
+  for (const max_age_seconds of [0, -1, 1.5, 34560001]) assert.throws(() => tag({ identity: { cookie: { max_age_seconds } } }), /max_age_seconds/);
 });

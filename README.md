@@ -4,7 +4,7 @@ Transport-neutral runtime for producing JSON tracking events in browsers and
 Node.js. The runtime is the shared implementation behind standalone JSON Tag
 integrations and, later, the client-side Google Tag Manager template.
 
-The public API is an initial `0.1.x` design.
+The browser identity API is being prepared for `v0.2.0`; use published release tags for CDN integrations.
 
 ## Scope
 
@@ -125,6 +125,8 @@ const jsonTag = JsonTagRuntime.createJsonTag({
     enabled: true,
     consent: false,
     storage_key: 'my_project_identity',
+    storage: 'cookie',
+    // cookie: { domain: 'example.com', max_age_seconds: 31536000 },
     session: { enabled: false, inactivity_minutes: 30 },
   },
 });
@@ -134,8 +136,16 @@ Connect your consent manager's actual decisions to `jsonTag.setIdentityConsent(t
 when identity storage is allowed and `jsonTag.setIdentityConsent(false)` on withdrawal.
 Initialization and sending before identity consent do not read or write identity
 storage. The first consented send creates a random UUID at `device.id`, stored in
-localStorage until cleared or reset. It identifies a browser profile on this origin,
-not a physical device. Use separate storage keys for unrelated projects/environments.
+a cookie by default (one year, renewed on activity). It identifies a browser profile,
+not a physical device. Cookies use Path=/, SameSite=Lax and Secure on HTTPS.
+Without `cookie.domain`, the cookie belongs to this host. Set the same explicit
+parent domain and storage key on cooperating subdomains to share it; unrelated
+domains cannot share it. The runtime never guesses the registrable domain.
+Use a distinct cookie name from JSON Client; it does not read or modify JSON
+Client cookies. `storage: 'localStorage'` remains available for strictly
+origin-scoped storage, which cannot be shared across subdomains. Browser policy
+can shorten either storage lifetime. Changing storage or domain does not migrate
+old state; reset it with the old configuration first if needed. Use separate storage keys for unrelated projects/environments.
 The DDA setup derives the key from its project and environment IDs.
 
 Sessions are **off by default**: DDA computes them from inactivity during analysis.
@@ -149,14 +159,32 @@ JSON Client session IDs. Leave browser identity disabled when JSON Client manage
 IDs. `id_factory` still applies only to `event.id`; identity uses crypto.randomUUID.
 
 Blocked storage falls back to memory for this runtime instance: IDs then do not
-survive reloads. Web Locks serialize creation/renewal between cooperating tabs.
-Browsers without Web Locks can race on simultaneous first creation or renewal.
+survive reloads. Web Locks serialize creation/renewal between cooperating tabs on the same origin.
+Different subdomains and browsers without Web Locks can race on simultaneous first
+creation or renewal; cookies do not provide cross-origin locking.
 
 `resetIdentity()` removes stored device/session state; the next consented event
 creates new IDs. `setIdentityConsent(false)` also disables automatic enrichment
 until re-granted. Connect consent changes in every tab. These APIs control identity,
 not event permission: supplied IDs remain untouched and queued/in-flight events
 are not recalled. Gate event sending and batching through your consent flow.
+
+### DDA daily identity without browser storage
+
+For direct browser-to-DDA requests, opt in with `headers: { ...yourHeaders,
+'X-DDA-Identity-Mode': 'daily' }` and use the fetch transport. DDA must have daily
+identity enabled. No Runtime version upgrade is needed just to set this header.
+DDA derives a missing Device ID from the actual request and rotates it each UTC day.
+The runtime never receives the secret, fingerprints the browser, or determines the
+client IP. It can combine this header with optional consented cookie identity:
+DDA preserves a supplied `device.id` and derives the daily fallback only when absent.
+Choose whether events are permitted independently through your consent integration.
+
+A first-party backend may forward minimized visitor context using a **server**
+ingestion key and `X-DDA-Source-Context`; browsers must never set this header.
+The backend must derive that context from its trusted HTTP request, not from event
+JSON. See DDA's ingestion contract for the validated header format. Skin2Go keeps
+all browser requests on its own backend and lets DDA own this derivation.
 
 ### Existing JSON Tag GTM installations
 
