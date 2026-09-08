@@ -46,7 +46,8 @@
     "export:esm": "npm run build:browser && npm run build:node && node ./scripts/export-esm.mjs",
     "test": "npm run build && node --test",
     "check": "npm test && npm pack --dry-run --cache .npm-cache",
-    "build:cdn": "npm run build:iife && node scripts/export-cdn.mjs"
+    "build:cdn": "npm run build:iife && node scripts/export-cdn.mjs",
+    "check:release": "node scripts/check-release.mjs"
   },
   "devDependencies": {
     "esbuild": "0.28.1",

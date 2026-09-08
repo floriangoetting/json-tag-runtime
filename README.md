@@ -79,15 +79,16 @@ tags. A Web GTM Custom HTML tag uses script tags; for inline Web GTM code,
 transpile the ES2020 bundle to ES5 first. Loading the external script does not
 require inline transpilation.
 
-After the artifact commit has been pushed to this public repository, its URL is:
+After the artifact commit and its release tag have been pushed to this public repository, its URL is:
 
 ```text
-https://cdn.jsdelivr.net/gh/floriangoetting/json-tag-runtime@<FULL-COMMIT-SHA>/cdn/browser.iife.js
+https://cdn.jsdelivr.net/gh/floriangoetting/json-tag-runtime@v0.1.0/cdn/browser.iife.js
 ```
 
-Replace `<FULL-COMMIT-SHA>` with the 40-character commit containing the artifact.
-GitHub source files are served by jsDelivr without an npm publication or CDN
-account. Pin the commit in deployed integrations so updates remain explicit.
+Use the exact published release tag. The example `v0.1.0` becomes available only
+after that tag is published. GitHub files are served by jsDelivr without an npm
+publication or CDN account. Never move a published release tag; create a new
+version for updates. DDA asks for Library Version and builds this URL automatically.
 See [jsDelivr's GitHub documentation](https://github.com/jsdelivr/jsdelivr#github).
 
 To prepare an updated artifact:
@@ -96,12 +97,17 @@ To prepare an updated artifact:
 npm ci
 npm run build:cdn
 npm run check
+npm run check:release -- v0.1.0
 git diff --check
 ```
 
 Review and commit the source changes and generated `cdn/browser.iife.js`
-together. After publishing the commit, retrieve its pinned URL and compare the
-response with the committed file before updating consumer defaults. The CI
+together. For a new version, update `package.json` and the lockfile before building.
+After approval to publish, create an annotated tag matching the package version
+(`v0.1.0` initially), then push the commit and that tag. Retrieve the release URL
+and compare the response with the committed file before updating consumer defaults.
+A GitHub Release can reference the same tag; a release attachment alone is not
+served through the `/gh/` file URL. The CI
 check rebuilds the runtime and rejects an artifact that differs from that build.
 Do not edit `cdn/browser.iife.js` manually. `dist/` remains ignored; only this
 explicit browser artifact is versioned for GitHub CDN distribution.

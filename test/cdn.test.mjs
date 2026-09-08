@@ -21,3 +21,16 @@ test('published browser artifact matches a fresh build and sends native browser 
   assert.equal(delivered.event.origin, 'frontend');
   assert.equal(delivered.device.id, 'test-device');
 });
+
+
+test('release tags match the package version and generate the versioned CDN URL', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const { version } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  const script = fileURLToPath(new URL('../scripts/check-release.mjs', import.meta.url));
+  const output = execFileSync(process.execPath, [script, `v${version}`], { encoding: 'utf8' });
+  assert.ok(output.includes(`json-tag-runtime@v${version}/cdn/browser.iife.js`));
+  for (const tag of ['main', 'latest', 'v999.999.999']) {
+    assert.throws(() => execFileSync(process.execPath, [script, tag], { stdio: 'pipe' }));
+  }
+});
