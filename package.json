@@ -45,7 +45,8 @@
     "sync:json-tag": "node ./scripts/sync-json-tag.mjs",
     "export:esm": "npm run build:browser && npm run build:node && node ./scripts/export-esm.mjs",
     "test": "npm run build && node --test",
-    "check": "npm test && npm pack --dry-run --cache .npm-cache"
+    "check": "npm test && npm pack --dry-run --cache .npm-cache",
+    "build:cdn": "npm run build:iife && node scripts/export-cdn.mjs"
   },
   "devDependencies": {
     "esbuild": "0.28.1",
