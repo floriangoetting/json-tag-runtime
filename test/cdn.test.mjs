@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import vm from 'node:vm';
 
-for (const filename of ['browser.iife.js', 'browser.iife.min.js']) {
+for (const filename of ['browser.iife.js', 'browser.iife.min.js', 'browser.iife.es5.min.js']) {
   test(`${filename} matches a fresh build and sends native browser events`, async () => {
     const artifact = await readFile(new URL(`../cdn/${filename}`, import.meta.url), 'utf8');
     const build = await readFile(new URL(`../dist/${filename}`, import.meta.url), 'utf8');

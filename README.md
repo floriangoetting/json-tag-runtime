@@ -70,15 +70,18 @@ The classic-script build exposes the same browser exports as
 ### Classic browser script: self-hosted, inline or jsDelivr
 
 The generated `cdn/browser.iife.min.js` is the minified standalone browser runtime.
-The readable `cdn/browser.iife.js` remains available for debugging. Both files
+The readable `cdn/browser.iife.js` remains available for debugging.
+`cdn/browser.iife.es5.min.js` provides ES5 syntax for inline Web GTM. All three files
 are generated from the same source and verified against fresh builds. The runtime uses
 `JsonTagRuntime.createJsonTag(...)` without an import statement and contains no
 legacy GTM adapter. Host this file on your website, load it through jsDelivr,
 or include its contents before initialization in a JavaScript action.
 Adobe Launch / Tags uses Core → Custom Code → JavaScript without `<script>`
 tags. A Web GTM Custom HTML tag uses script tags; for inline Web GTM code,
-transpile the ES2020 bundle to ES5 first. Loading the external script does not
-require inline transpilation.
+use the ready-made `browser.iife.es5.min.js` build. No manual transpilation is needed.
+Loading the external script uses the regular browser build. The ES5 variant adapts
+syntax for the tag editor; it still requires modern browser APIs such as Promise,
+fetch, Set and crypto.randomUUID. It does not add the legacy GTM adapter.
 
 After the artifact commit and its release tag have been pushed to this public repository, its URL is:
 
@@ -92,7 +95,7 @@ publication or CDN account. Never move a published release tag; create a new
 version for updates. DDA asks for Library Version and builds this URL automatically.
 See [jsDelivr's GitHub documentation](https://github.com/jsdelivr/jsdelivr#github).
 
-To prepare an updated artifact:
+Use Node.js 24 for the build toolchain, matching CI. To prepare an updated artifact:
 
 ```bash
 npm ci
@@ -102,7 +105,7 @@ npm run check:release -- v0.2.0
 git diff --check
 ```
 
-Review and commit the source changes and both generated files under `cdn/`
+Review and commit the source changes and all generated files under `cdn/`
 together. For a new version, update `package.json` and the lockfile before building.
 After approval to publish, create an annotated tag matching the package version
 (`v0.2.0` for this update), then push the commit and that tag. Retrieve the release URL
@@ -278,6 +281,7 @@ Build outputs:
 - `dist/node/index.js`
 - `dist/browser.iife.js` (readable)
 - `dist/browser.iife.min.js` (minified)
+- `dist/browser.iife.es5.min.js` (minified, ES5 syntax for inline Web GTM)
 - TypeScript declarations under the matching `dist` paths
 
 ### Browser cookie verification
@@ -290,3 +294,18 @@ can point to its installed Playwright module and `CHROMIUM_EXECUTABLE` to Chromi
 The test covers consent, public suffixes, subdomain sharing, host-only overrides,
 localhost, IP addresses, and withdrawal before the first send. It sends no events
 to an external ingestion service.
+
+### DDA download and inline artifacts
+
+Run `npm run export:dda -- /path/to/dda-app` to build and copy the minified browser
+and Web GTM files into DDA's `src/static/vendor/json-tag-runtime/VERSION/`, along
+with the license. The generated `src/platform/runtimeLibrary.json` records version,
+URLs and SHA-256 checksums. DDA offers the regular file as a download for self-hosting
+and loads the appropriate file as verified text for inline snippets. It never executes
+that file in the setup interface. Consumer copies are generated artifacts; update
+source here and export again instead of editing them in DDA.
+
+The ES5 syntax build uses Babel and esbuild and is parsed with Acorn in ES5 mode.
+`npm run check` also verifies its reproducibility and event/identity behavior.
+The included DDA files do not require a public release; jsDelivr still requires a
+published release tag. This does not publish v0.2.0.
