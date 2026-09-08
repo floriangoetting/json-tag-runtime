@@ -4,8 +4,7 @@ Transport-neutral runtime for producing JSON tracking events in browsers and
 Node.js. The runtime is the shared implementation behind standalone JSON Tag
 integrations and, later, the client-side Google Tag Manager template.
 
-The package name and public API are an initial `0.1.0` design and may still
-change before the first publication.
+The public API is an initial `0.1.x` design.
 
 ## Scope
 
@@ -60,7 +59,7 @@ The classic-script build exposes the same browser exports as
 `globalThis.JsonTagRuntime`:
 
 ```html
-<script src="/browser.iife.js"></script>
+<script src="/browser.iife.min.js"></script>
 <script>
   const jsonTag = JsonTagRuntime.createJsonTag({
     endpoint: '/api/client-events',
@@ -70,7 +69,9 @@ The classic-script build exposes the same browser exports as
 
 ### Classic browser script: self-hosted, inline or jsDelivr
 
-The generated `cdn/browser.iife.js` is the standalone browser runtime. It uses
+The generated `cdn/browser.iife.min.js` is the minified standalone browser runtime.
+The readable `cdn/browser.iife.js` remains available for debugging. Both files
+are generated from the same source and verified against fresh builds. The runtime uses
 `JsonTagRuntime.createJsonTag(...)` without an import statement and contains no
 legacy GTM adapter. Host this file on your website, load it through jsDelivr,
 or include its contents before initialization in a JavaScript action.
@@ -82,10 +83,10 @@ require inline transpilation.
 After the artifact commit and its release tag have been pushed to this public repository, its URL is:
 
 ```text
-https://cdn.jsdelivr.net/gh/floriangoetting/json-tag-runtime@v0.1.0/cdn/browser.iife.js
+https://cdn.jsdelivr.net/gh/floriangoetting/json-tag-runtime@v0.1.1/cdn/browser.iife.min.js
 ```
 
-Use the exact published release tag. The example `v0.1.0` becomes available only
+Use the exact published release tag. The example `v0.1.1` becomes available only
 after that tag is published. GitHub files are served by jsDelivr without an npm
 publication or CDN account. Never move a published release tag; create a new
 version for updates. DDA asks for Library Version and builds this URL automatically.
@@ -97,20 +98,20 @@ To prepare an updated artifact:
 npm ci
 npm run build:cdn
 npm run check
-npm run check:release -- v0.1.0
+npm run check:release -- v0.1.1
 git diff --check
 ```
 
-Review and commit the source changes and generated `cdn/browser.iife.js`
+Review and commit the source changes and both generated files under `cdn/`
 together. For a new version, update `package.json` and the lockfile before building.
 After approval to publish, create an annotated tag matching the package version
-(`v0.1.0` initially), then push the commit and that tag. Retrieve the release URL
+(`v0.1.1` for this update), then push the commit and that tag. Retrieve the release URL
 and compare the response with the committed file before updating consumer defaults.
 A GitHub Release can reference the same tag; a release attachment alone is not
 served through the `/gh/` file URL. The CI
 check rebuilds the runtime and rejects an artifact that differs from that build.
-Do not edit `cdn/browser.iife.js` manually. `dist/` remains ignored; only this
-explicit browser artifact is versioned for GitHub CDN distribution.
+Do not edit either generated file under `cdn/` manually. `dist/` remains ignored; these
+explicit browser artifacts are versioned for GitHub CDN distribution.
 
 ### Existing JSON Tag GTM installations
 
@@ -194,5 +195,6 @@ Build outputs:
 - `dist/core/index.js`
 - `dist/browser/index.js`
 - `dist/node/index.js`
-- `dist/browser.iife.js`
+- `dist/browser.iife.js` (readable)
+- `dist/browser.iife.min.js` (minified)
 - TypeScript declarations under the matching `dist` paths
