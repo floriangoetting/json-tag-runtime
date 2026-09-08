@@ -21,6 +21,21 @@ for (const filename of ['browser.iife.js', 'browser.iife.min.js']) {
     assert.equal(delivered.event.id, 'cdn-smoke-event');
     assert.equal(delivered.event.origin, 'frontend');
     assert.equal(delivered.device.id, 'test-device');
+    context.crypto = globalThis.crypto;
+    const identityTracking = context.JsonTagRuntime.createJsonTag({
+      browser_context: false,
+      id_factory: () => 'identity-smoke-event',
+      identity: { enabled: true, session: { enabled: true } },
+      transport: async (payload) => { delivered = payload; return { accepted: true }; },
+    });
+    identityTracking.setIdentityConsent(true);
+    await identityTracking.send({ event: { name: 'identity_smoke' } });
+    assert.match(delivered.device.id, /^[0-9a-f-]{36}$/);
+    assert.match(delivered.session.id, /^[0-9a-f-]{36}$/);
+    identityTracking.setIdentityConsent(false);
+    await identityTracking.send({ event: { name: 'identity_smoke' } });
+    assert.equal(delivered.device, undefined);
+    assert.equal(delivered.session, undefined);
   });
 
 }

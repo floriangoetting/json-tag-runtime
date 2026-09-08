@@ -8,6 +8,7 @@ import {
   type ProducerEventInput,
   type RetryOptions,
 } from '../core/index.js';
+import { createBrowserIdentity, type BrowserIdentityOptions } from './identity.js';
 import { withBrowserContext } from './context.js';
 import {
   createBrowserHttpTransport,
@@ -19,6 +20,7 @@ export interface BrowserJsonTagOptions extends Omit<
   BrowserHttpTransportOptions,
   'endpoint' | 'transport'
 > {
+  identity?: BrowserIdentityOptions;
   batch?: BatchOptions;
   browser_context?: boolean;
   clean_payload?: boolean;
@@ -59,7 +61,15 @@ function resolveTransport(options: BrowserJsonTagOptions): JsonTagTransport | Js
   return createBrowserHttpTransport(transportOptions);
 }
 
-export function createJsonTag(options: BrowserJsonTagOptions = {}): JsonTag {
+export interface BrowserJsonTag extends JsonTag {
+  setIdentityConsent(granted: boolean): void;
+  resetIdentity(): void;
+}
+
+export type { BrowserIdentityOptions } from './identity.js';
+
+export function createJsonTag(options: BrowserJsonTagOptions = {}): BrowserJsonTag {
+  const identity = createBrowserIdentity(options.identity, options.now ?? (() => new Date()));
   const coreOptions = {
     id_factory: options.id_factory ?? browserId,
     now: options.now ?? (() => new Date()),
@@ -74,11 +84,24 @@ export function createJsonTag(options: BrowserJsonTagOptions = {}): JsonTag {
     ...(options.retry === undefined ? {} : { retry: options.retry }),
   });
 
+  const enriching = new Set<Promise<unknown>>();
+  const sendEnriched = (input: ProducerEventInput) => core.send(options.browser_context === false ? input : withBrowserContext(input));
   return {
-    flush: core.flush,
-    pending: core.pending,
-    send(input: ProducerEventInput) {
-      return core.send(options.browser_context === false ? input : withBrowserContext(input));
+    setIdentityConsent: identity.setConsent,
+    resetIdentity: identity.reset,
+    async flush() {
+      await Promise.allSettled([...enriching]);
+      return core.flush();
+    },
+    pending: () => core.pending() + enriching.size,
+    async send(input: ProducerEventInput) {
+      const enriched = identity.enrich(input);
+      if (!(enriched instanceof Promise)) return sendEnriched(enriched);
+      // flush() must wait for Web Lock work before draining the batch queue.
+      const prepared = enriched.then((value) => { enriching.delete(prepared); return value; });
+      enriching.add(prepared);
+      try { return await sendEnriched(await prepared); }
+      finally { enriching.delete(prepared); }
     },
   };
 }

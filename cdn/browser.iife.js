@@ -335,6 +335,95 @@ var JsonTagRuntime = (() => {
     };
   }
 
+  // src/browser/identity.ts
+  var object = (value) => value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  var hasId = (value) => typeof value === "string" && value.trim() !== "" || typeof value === "number" && Number.isFinite(value);
+  var uuid = (value) => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  function createBrowserIdentity(options = {}, now) {
+    const enabled = options.enabled === true;
+    let consent = options.consent === true;
+    const key = options.storage_key ?? "json_tag_identity_v1";
+    const minutes = options.session?.inactivity_minutes ?? 30;
+    if (!key.trim()) throw new Error("identity.storage_key must not be empty");
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440) {
+      throw new Error("identity.session.inactivity_minutes must be an integer from 1 to 1440");
+    }
+    let memory = {};
+    let storageFailed = false;
+    const read = () => {
+      try {
+        if (storageFailed) return memory;
+        const raw = globalThis.localStorage.getItem(key);
+        if (!raw) return {};
+        const data = object(JSON.parse(raw));
+        const state = {};
+        if (uuid(data.device_id)) state.device_id = data.device_id;
+        const session = object(data.session);
+        if (uuid(session.id) && hasId(session.device_id) && typeof session.last_activity === "number" && Number.isFinite(session.last_activity)) {
+          state.session = { id: session.id, device_id: session.device_id, last_activity: session.last_activity };
+        }
+        return state;
+      } catch {
+        return memory;
+      }
+    };
+    const write = (state) => {
+      memory = state;
+      try {
+        globalThis.localStorage.setItem(key, JSON.stringify(state));
+      } catch {
+        storageFailed = true;
+      }
+    };
+    const reset = () => {
+      memory = {};
+      if (!enabled) return;
+      try {
+        globalThis.localStorage.removeItem(key);
+      } catch {
+        storageFailed = true;
+      }
+    };
+    return {
+      reset,
+      setConsent(granted) {
+        consent = granted === true;
+        if (!consent) reset();
+      },
+      enrich(input) {
+        const enrich = () => {
+          if (!enabled || !consent) return input;
+          const device = object(input.device);
+          const session = object(input.session);
+          const needsDevice = !hasId(device.id);
+          const needsSession = options.session?.enabled === true && !hasId(session.id);
+          if (!needsDevice && !needsSession) return input;
+          const state = read();
+          const deviceId = hasId(device.id) ? device.id : state.device_id ?? globalThis.crypto.randomUUID();
+          if (needsDevice) state.device_id = String(deviceId);
+          let sessionId;
+          if (needsSession) {
+            const time = now().getTime();
+            const previous = state.session;
+            sessionId = previous && previous.device_id === deviceId && time >= previous.last_activity && time - previous.last_activity < minutes * 6e4 ? previous.id : globalThis.crypto.randomUUID();
+            state.session = { id: sessionId, device_id: deviceId, last_activity: time };
+          }
+          write(state);
+          return {
+            ...input,
+            ...needsDevice ? { device: { ...device, id: deviceId } } : {},
+            ...needsSession ? { session: { ...session, id: sessionId } } : {}
+          };
+        };
+        if (!enabled || !consent) return input;
+        if (globalThis.navigator?.locks) {
+          return globalThis.navigator.locks.request(key, enrich);
+        }
+        return enrich();
+      }
+    };
+  }
+
   // src/browser/context.ts
   function mergeObject(defaults, value) {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -490,6 +579,7 @@ var JsonTagRuntime = (() => {
     return createBrowserHttpTransport(transportOptions);
   }
   function createJsonTag(options = {}) {
+    const identity = createBrowserIdentity(options.identity, options.now ?? (() => /* @__PURE__ */ new Date()));
     const coreOptions = {
       id_factory: options.id_factory ?? browserId,
       now: options.now ?? (() => /* @__PURE__ */ new Date()),
@@ -503,11 +593,29 @@ var JsonTagRuntime = (() => {
       ...options.on_error === void 0 ? {} : { on_error: options.on_error },
       ...options.retry === void 0 ? {} : { retry: options.retry }
     });
+    const enriching = /* @__PURE__ */ new Set();
+    const sendEnriched = (input) => core.send(options.browser_context === false ? input : withBrowserContext(input));
     return {
-      flush: core.flush,
-      pending: core.pending,
-      send(input) {
-        return core.send(options.browser_context === false ? input : withBrowserContext(input));
+      setIdentityConsent: identity.setConsent,
+      resetIdentity: identity.reset,
+      async flush() {
+        await Promise.allSettled([...enriching]);
+        return core.flush();
+      },
+      pending: () => core.pending() + enriching.size,
+      async send(input) {
+        const enriched = identity.enrich(input);
+        if (!(enriched instanceof Promise)) return sendEnriched(enriched);
+        const prepared = enriched.then((value) => {
+          enriching.delete(prepared);
+          return value;
+        });
+        enriching.add(prepared);
+        try {
+          return await sendEnriched(await prepared);
+        } finally {
+          enriching.delete(prepared);
+        }
       }
     };
   }

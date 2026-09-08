@@ -16,7 +16,7 @@ The runtime owns:
 - browser HTTP transports using `fetch`, `sendBeacon`, and fetch keepalive,
 - a transport interface for application-specific Node.js integrations.
 
-It intentionally does not own application event schemas, identity enrichment,
+It intentionally does not own application event schemas, server-side identity enrichment,
 consent decisions, device or bot detection, Redis/BullMQ queues, analytics
 processing, or destination routing.
 
@@ -83,10 +83,10 @@ require inline transpilation.
 After the artifact commit and its release tag have been pushed to this public repository, its URL is:
 
 ```text
-https://cdn.jsdelivr.net/gh/floriangoetting/json-tag-runtime@v0.1.1/cdn/browser.iife.min.js
+https://cdn.jsdelivr.net/gh/floriangoetting/json-tag-runtime@v0.2.0/cdn/browser.iife.min.js
 ```
 
-Use the exact published release tag. The example `v0.1.1` becomes available only
+Use the exact published release tag. The example `v0.2.0` becomes available only
 after that tag is published. GitHub files are served by jsDelivr without an npm
 publication or CDN account. Never move a published release tag; create a new
 version for updates. DDA asks for Library Version and builds this URL automatically.
@@ -98,20 +98,65 @@ To prepare an updated artifact:
 npm ci
 npm run build:cdn
 npm run check
-npm run check:release -- v0.1.1
+npm run check:release -- v0.2.0
 git diff --check
 ```
 
 Review and commit the source changes and both generated files under `cdn/`
 together. For a new version, update `package.json` and the lockfile before building.
 After approval to publish, create an annotated tag matching the package version
-(`v0.1.1` for this update), then push the commit and that tag. Retrieve the release URL
+(`v0.2.0` for this update), then push the commit and that tag. Retrieve the release URL
 and compare the response with the committed file before updating consumer defaults.
 A GitHub Release can reference the same tag; a release attachment alone is not
 served through the `/gh/` file URL. The CI
 check rebuilds the runtime and rejects an artifact that differs from that build.
 Do not edit either generated file under `cdn/` manually. `dist/` remains ignored; these
 explicit browser artifacts are versioned for GitHub CDN distribution.
+
+### Optional browser identity (v0.2.0)
+
+Browser identity is opt-in and disabled for existing integrations. Core, Node.js
+and legacy GTM adapters do not change. Enable it for standalone browser tracking:
+
+```js
+const jsonTag = JsonTagRuntime.createJsonTag({
+  endpoint: '/api/client-events',
+  identity: {
+    enabled: true,
+    consent: false,
+    storage_key: 'my_project_identity',
+    session: { enabled: false, inactivity_minutes: 30 },
+  },
+});
+```
+
+Connect your consent manager's actual decisions to `jsonTag.setIdentityConsent(true)`
+when identity storage is allowed and `jsonTag.setIdentityConsent(false)` on withdrawal.
+Initialization and sending before identity consent do not read or write identity
+storage. The first consented send creates a random UUID at `device.id`, stored in
+localStorage until cleared or reset. It identifies a browser profile on this origin,
+not a physical device. Use separate storage keys for unrelated projects/environments.
+The DDA setup derives the key from its project and environment IDs.
+
+Sessions are **off by default**: DDA computes them from inactivity during analysis.
+With `session.enabled: true`, the runtime adds a UUID at `session.id`, shared across
+pages and tabs until the inactivity limit (1–1440 minutes, default 30). Activity time
+is separate; IDs are not timestamps. Sessions also rotate on device changes or clock
+rollback. Select supplied sessions in DDA to use these IDs for analysis.
+
+Supplied `device.id` and `session.id` always take precedence, including numeric
+JSON Client session IDs. Leave browser identity disabled when JSON Client manages
+IDs. `id_factory` still applies only to `event.id`; identity uses crypto.randomUUID.
+
+Blocked storage falls back to memory for this runtime instance: IDs then do not
+survive reloads. Web Locks serialize creation/renewal between cooperating tabs.
+Browsers without Web Locks can race on simultaneous first creation or renewal.
+
+`resetIdentity()` removes stored device/session state; the next consented event
+creates new IDs. `setIdentityConsent(false)` also disables automatic enrichment
+until re-granted. Connect consent changes in every tab. These APIs control identity,
+not event permission: supplied IDs remain untouched and queued/in-flight events
+are not recalled. Gate event sending and batching through your consent flow.
 
 ### Existing JSON Tag GTM installations
 
