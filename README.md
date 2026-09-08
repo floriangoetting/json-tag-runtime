@@ -4,7 +4,7 @@ Transport-neutral runtime for producing JSON tracking events in browsers and
 Node.js. The runtime is the shared implementation behind standalone JSON Tag
 integrations and, later, the client-side Google Tag Manager template.
 
-The browser identity API is being prepared for `v0.2.0`; use published release tags for CDN integrations.
+Version `v0.2.0` adds optional browser device and session IDs with consent-controlled storage. Use exact release tags for CDN integrations.
 
 ## Scope
 
@@ -89,8 +89,7 @@ After the artifact commit and its release tag have been pushed to this public re
 https://cdn.jsdelivr.net/gh/floriangoetting/json-tag-runtime@v0.2.0/cdn/browser.iife.min.js
 ```
 
-Use the exact published release tag. The example `v0.2.0` becomes available only
-after that tag is published. GitHub files are served by jsDelivr without an npm
+Use the exact published release tag. GitHub files are served by jsDelivr without an npm
 publication or CDN account. Never move a published release tag; create a new
 version for updates. DDA asks for Library Version and builds this URL automatically.
 See [jsDelivr's GitHub documentation](https://github.com/jsdelivr/jsdelivr#github).
@@ -319,4 +318,4 @@ source here and export again instead of editing them in DDA.
 The ES5 syntax build uses Babel and esbuild and is parsed with Acorn in ES5 mode.
 `npm run check` also verifies its reproducibility and event/identity behavior.
 The included DDA files do not require a public release; jsDelivr still requires a
-published release tag. This does not publish v0.2.0.
+published release tag. Exporting consumer files does not publish a release.
