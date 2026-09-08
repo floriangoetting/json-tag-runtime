@@ -345,12 +345,40 @@ var JsonTagRuntime = (() => {
     const key = options.storage_key ?? "json_tag_identity_v1";
     const storage = options.storage ?? "cookie";
     const cookieName = encodeURIComponent(key);
-    const domain = options.cookie?.domain?.replace(/^\./, "").toLowerCase();
+    const configuredDomain = options.cookie?.domain === void 0 ? "auto" : options.cookie.domain;
+    const domain = configuredDomain?.replace(/^\./, "").toLowerCase();
+    const automaticDomain = domain === "auto";
     const maxAge = options.cookie?.max_age_seconds ?? 31536e3;
     if (!["cookie", "localStorage"].includes(storage)) throw new Error("Invalid identity.storage");
     if (!Number.isInteger(maxAge) || maxAge < 1 || maxAge > 3456e4) throw new Error("identity.cookie.max_age_seconds must be between 1 and 34560000");
-    if (domain && (!/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(domain) || !globalThis.location || location.hostname !== domain && !location.hostname.endsWith(`.${domain}`))) throw new Error("identity.cookie.domain must match this host or a parent domain");
-    const cookieAttributes = `; Path=/; SameSite=Lax${domain ? `; Domain=${domain}` : ""}${globalThis.location?.protocol === "https:" ? "; Secure" : ""}`;
+    if (domain && !automaticDomain && (!/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(domain) || !globalThis.location || location.hostname !== domain && !location.hostname.endsWith(`.${domain}`))) throw new Error("identity.cookie.domain must match this host or a parent domain");
+    const cookieAttributes = (scope) => `; Path=/; SameSite=Lax${scope ? `; Domain=${scope}` : ""}${globalThis.location?.protocol === "https:" ? "; Secure" : ""}`;
+    const parentDomains = () => {
+      const host = globalThis.location?.hostname.toLowerCase() ?? "";
+      if (!host.includes(".") || host.includes(":") || /^[\d.]+$/.test(host)) return [];
+      const labels = host.split(".");
+      return labels.slice(1).map((_, index) => labels.slice(labels.length - index - 2).join("."));
+    };
+    let resolvedDomain = automaticDomain ? void 0 : domain;
+    let domainResolved = !automaticDomain;
+    const resolveCookieDomain = () => {
+      if (domainResolved) return resolvedDomain;
+      domainResolved = true;
+      const probe = `${cookieName}_domain_probe_${globalThis.crypto.randomUUID()}`;
+      for (const candidate of parentDomains()) {
+        try {
+          globalThis.document.cookie = `${probe}=1; Max-Age=60${cookieAttributes(candidate)}`;
+          const accepted = globalThis.document.cookie.split(";").some((part) => part.trim() === `${probe}=1`);
+          if (accepted) {
+            resolvedDomain = candidate;
+            break;
+          }
+        } finally {
+          globalThis.document.cookie = `${probe}=; Max-Age=0${cookieAttributes(candidate)}`;
+        }
+      }
+      return resolvedDomain;
+    };
     const readStored = () => storage === "localStorage" ? globalThis.localStorage.getItem(key) : globalThis.document.cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1);
     const decodeStored = (raw) => storage === "cookie" ? decodeURIComponent(raw) : raw;
     const minutes = options.session?.inactivity_minutes ?? 30;
@@ -383,7 +411,7 @@ var JsonTagRuntime = (() => {
         if (storage === "localStorage") globalThis.localStorage.setItem(key, JSON.stringify(state));
         else {
           const value = encodeURIComponent(JSON.stringify(state));
-          globalThis.document.cookie = `${cookieName}=${value}; Max-Age=${maxAge}${cookieAttributes}`;
+          globalThis.document.cookie = `${cookieName}=${value}; Max-Age=${maxAge}${cookieAttributes(resolveCookieDomain())}`;
           if (readStored() !== value) storageFailed = true;
         }
       } catch {
@@ -395,7 +423,10 @@ var JsonTagRuntime = (() => {
       if (!enabled) return;
       try {
         if (storage === "localStorage") globalThis.localStorage.removeItem(key);
-        else globalThis.document.cookie = `${cookieName}=; Max-Age=0${cookieAttributes}`;
+        else {
+          const scopes = automaticDomain ? [void 0, ...parentDomains()] : [domain];
+          for (const scope of scopes) globalThis.document.cookie = `${cookieName}=; Max-Age=0${cookieAttributes(scope)}`;
+        }
       } catch {
         storageFailed = true;
       }

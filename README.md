@@ -126,7 +126,7 @@ const jsonTag = JsonTagRuntime.createJsonTag({
     consent: false,
     storage_key: 'my_project_identity',
     storage: 'cookie',
-    // cookie: { domain: 'example.com', max_age_seconds: 31536000 },
+    cookie: { domain: 'auto' }, // Default: share across this site's subdomains.
     session: { enabled: false, inactivity_minutes: 30 },
   },
 });
@@ -138,9 +138,17 @@ Initialization and sending before identity consent do not read or write identity
 storage. The first consented send creates a random UUID at `device.id`, stored in
 a cookie by default (one year, renewed on activity). It identifies a browser profile,
 not a physical device. Cookies use Path=/, SameSite=Lax and Secure on HTTPS.
-Without `cookie.domain`, the cookie belongs to this host. Set the same explicit
-parent domain and storage key on cooperating subdomains to share it; unrelated
-domains cannot share it. The runtime never guesses the registrable domain.
+The default `cookie.domain: 'auto'` finds the broadest cookie domain accepted by
+this browser: `analytics.example.com` uses `example.com`, and `shop.example.co.uk`
+uses `example.co.uk`. This uses a short-lived probe cookie on the first consented
+send and removes it immediately. The browser's public suffix rules also protect
+shared hosting domains such as `github.io`. No probe runs before storage consent.
+Localhost and IP addresses use host-only cookies. Use the same storage key on
+cooperating subdomains to share IDs; unrelated domains retain separate IDs, so one
+configuration can run on multiple websites without hardcoding their domains.
+Set `cookie.domain: null` for host-only storage or a matching parent hostname such
+as `'example.com'` for an explicit override. Withdrawal deletes the owned cookie
+without creating probe cookies, including when this instance has not sent yet.
 Use a distinct cookie name from JSON Client; it does not read or modify JSON
 Client cookies. `storage: 'localStorage'` remains available for strictly
 origin-scoped storage, which cannot be shared across subdomains. Browser policy
@@ -271,3 +279,14 @@ Build outputs:
 - `dist/browser.iife.js` (readable)
 - `dist/browser.iife.min.js` (minified)
 - TypeScript declarations under the matching `dist` paths
+
+### Browser cookie verification
+
+`npm run check` covers the identity lifecycle and builds the CDN source separately
+with `npm run build:cdn`. For the optional real-browser domain tests, run
+`RUN_IDENTITY_BROWSER_TEST=1 node --test test/identity.browser.test.mjs` in a
+Docker browser runner with Playwright and Chromium available. `PLAYWRIGHT_MODULE`
+can point to its installed Playwright module and `CHROMIUM_EXECUTABLE` to Chromium.
+The test covers consent, public suffixes, subdomain sharing, host-only overrides,
+localhost, IP addresses, and withdrawal before the first send. It sends no events
+to an external ingestion service.

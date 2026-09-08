@@ -150,7 +150,7 @@ function cookies(t, blocked = false) {
   return { jar, writes, reads: () => reads };
 }
 
-test('cookie identity defaults to host scope and starts only after consent', async (t) => {
+test('cookie identity discovers parent scope only after consent', async (t) => {
   const store = cookies(t);
   const runtime = createJsonTag({ browser_context: false, transport: async () => ({ accepted: true }), identity: { enabled: true } });
   assert.equal((await event(runtime)).device.id, undefined);
@@ -159,8 +159,8 @@ test('cookie identity defaults to host scope and starts only after consent', asy
   runtime.setIdentityConsent(true);
   const first = await event(runtime);
   assert.match(first.device.id, uuid);
-  assert.match(store.writes[0], /Max-Age=31536000; Path=\/; SameSite=Lax; Secure$/);
-  assert.doesNotMatch(store.writes[0], /Domain=/);
+  assert.match(store.writes.at(-1), /Max-Age=31536000; Path=\/; SameSite=Lax; Domain=example.com; Secure$/);
+  assert.equal([...store.jar.keys()].some((key) => key.includes('_domain_probe_')), false);
   assert.equal(first.session, undefined);
 });
 
@@ -186,4 +186,17 @@ test('blocked cookies use memory and invalid domains or lifetimes are rejected',
   assert.notEqual((await event(runtime)).device.id, first.device.id);
   for (const domain of ['other.com', 'example.com; Secure', 'badexample.com']) assert.throws(() => tag({ identity: { cookie: { domain } } }), /cookie.domain/);
   for (const max_age_seconds of [0, -1, 1.5, 34560001]) assert.throws(() => tag({ identity: { cookie: { max_age_seconds } } }), /max_age_seconds/);
+});
+
+test('explicit host-only cookies do not probe and withdrawal before first send only deletes', async (t) => {
+  const store = cookies(t);
+  const runtime = tag({ identity: { storage: 'cookie', enabled: true, consent: true, cookie: { domain: null } } });
+  await event(runtime);
+  assert.equal(store.writes.length, 1);
+  assert.doesNotMatch(store.writes[0], /Domain=/);
+  const fresh = tag({ identity: { storage: 'cookie', enabled: true } });
+  store.writes.length = 0;
+  fresh.setIdentityConsent(false);
+  assert.ok(store.writes.every((value) => value.includes('Max-Age=0;')));
+  assert.equal(store.jar.size, 0);
 });
