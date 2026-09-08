@@ -200,3 +200,38 @@ test('explicit host-only cookies do not probe and withdrawal before first send o
   assert.ok(store.writes.every((value) => value.includes('Max-Age=0;')));
   assert.equal(store.jar.size, 0);
 });
+
+for (const kind of ['cookie', 'localStorage']) {
+  test(`${kind}: session-only identity respects consent and never creates a device ID`, async (t) => {
+    const store = kind === 'cookie' ? cookies(t) : storage(t);
+    const options = { identity: { storage: kind, enabled: true, device: { enabled: false }, session: { enabled: true } } };
+    const runtime = tag(options);
+    const unconsented = await event(runtime);
+    assert.equal(unconsented.device.id, undefined);
+    assert.equal(unconsented.session, undefined);
+    if (kind === 'cookie') { assert.equal(store.reads(), 0); assert.equal(store.writes.length, 0); }
+    else assert.deepEqual(store.counts(), [0, 0]);
+    runtime.setIdentityConsent(true);
+    const first = await event(runtime);
+    assert.equal(first.device.id, undefined);
+    assert.match(first.session.id, uuid);
+    const reloaded = tag(options);
+    reloaded.setIdentityConsent(true);
+    assert.equal((await event(reloaded)).session.id, first.session.id);
+    const supplied = await event(reloaded, { ...payload(), device: { id: 'provided-device' } });
+    assert.equal(supplied.device.id, 'provided-device');
+    assert.notEqual(supplied.session.id, first.session.id);
+    runtime.setIdentityConsent(false);
+    assert.equal((await event(runtime)).session, undefined);
+    assert.equal((kind === 'cookie' ? store.jar : store.data).size, 0);
+  });
+  test(`${kind}: device and session storage both stay untouched before consent`, async (t) => {
+    const store = kind === 'cookie' ? cookies(t) : storage(t);
+    const runtime = tag({ identity: { storage: kind, enabled: true, session: { enabled: true } } });
+    const result = await event(runtime);
+    assert.equal(result.device.id, undefined);
+    assert.equal(result.session, undefined);
+    if (kind === 'cookie') { assert.equal(store.reads(), 0); assert.equal(store.writes.length, 0); }
+    else assert.deepEqual(store.counts(), [0, 0]);
+  });
+}

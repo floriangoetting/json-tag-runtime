@@ -397,7 +397,7 @@ var JsonTagRuntime = (() => {
         const state = {};
         if (uuid(data.device_id)) state.device_id = data.device_id;
         const session = object(data.session);
-        if (uuid(session.id) && hasId(session.device_id) && typeof session.last_activity === "number" && Number.isFinite(session.last_activity)) {
+        if (uuid(session.id) && (hasId(session.device_id) || session.device_id === null) && typeof session.last_activity === "number" && Number.isFinite(session.last_activity)) {
           state.session = { id: session.id, device_id: session.device_id, last_activity: session.last_activity };
         }
         return state;
@@ -442,11 +442,11 @@ var JsonTagRuntime = (() => {
           if (!enabled || !consent) return input;
           const device = object(input.device);
           const session = object(input.session);
-          const needsDevice = !hasId(device.id);
+          const needsDevice = options.device?.enabled !== false && !hasId(device.id);
           const needsSession = options.session?.enabled === true && !hasId(session.id);
           if (!needsDevice && !needsSession) return input;
           const state = read();
-          const deviceId = hasId(device.id) ? device.id : state.device_id ?? globalThis.crypto.randomUUID();
+          const deviceId = hasId(device.id) ? device.id : needsDevice ? state.device_id ?? globalThis.crypto.randomUUID() : null;
           if (needsDevice) state.device_id = String(deviceId);
           let sessionId;
           if (needsSession) {

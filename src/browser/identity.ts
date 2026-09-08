@@ -4,6 +4,8 @@ export interface BrowserIdentityOptions {
   enabled?: boolean;
   /** Storage is untouched until consent is explicitly granted. */
   consent?: boolean;
+  /** Disable automatic device IDs while optionally managing sessions. */
+  device?: { enabled?: boolean };
   storage_key?: string;
   storage?: 'cookie' | 'localStorage';
   cookie?: { /** 'auto' (default) shares subdomains; null keeps the current host. */ domain?: string | null; max_age_seconds?: number };
@@ -12,7 +14,7 @@ export interface BrowserIdentityOptions {
 
 type IdentityState = {
   device_id?: string;
-  session?: { id: string; device_id: string | number; last_activity: number };
+  session?: { id: string; device_id: string | number | null; last_activity: number };
 };
 const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -79,7 +81,7 @@ export function createBrowserIdentity(options: BrowserIdentityOptions = {}, now:
       const state: IdentityState = {};
       if (uuid(data.device_id)) state.device_id = data.device_id;
       const session = object(data.session);
-      if (uuid(session.id) && hasId(session.device_id) && typeof session.last_activity === 'number' && Number.isFinite(session.last_activity)) {
+      if (uuid(session.id) && (hasId(session.device_id) || session.device_id === null) && typeof session.last_activity === 'number' && Number.isFinite(session.last_activity)) {
         state.session = { id: session.id, device_id: session.device_id, last_activity: session.last_activity };
       }
       return state;
@@ -122,11 +124,11 @@ export function createBrowserIdentity(options: BrowserIdentityOptions = {}, now:
         if (!enabled || !consent) return input;
         const device = object(input.device);
         const session = object(input.session);
-        const needsDevice = !hasId(device.id);
+        const needsDevice = options.device?.enabled !== false && !hasId(device.id);
         const needsSession = options.session?.enabled === true && !hasId(session.id);
         if (!needsDevice && !needsSession) return input;
         const state = read();
-        const deviceId = hasId(device.id) ? device.id : state.device_id ?? globalThis.crypto.randomUUID();
+        const deviceId = hasId(device.id) ? device.id : needsDevice ? state.device_id ?? globalThis.crypto.randomUUID() : null;
         if (needsDevice) state.device_id = String(deviceId);
         let sessionId: string | undefined;
         if (needsSession) {
